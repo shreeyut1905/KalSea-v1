@@ -48,9 +48,10 @@ class KalSeaH3State:
     """Gate + forecaster state of one generation, attached to the transformer as `transformer.kalsea`."""
 
     def __init__(self, thresh=0.3, warmup=3, tau=0.5, r_obs=1e-3, q_mult=1.0, adapt_q=True, num_steps=None,
-                 scheduler=None, enabled=True):
+                 scheduler=None, enabled=True, sea_power_exp=3.0):
         self.enabled = enabled
         self.thresh, self.warmup = float(thresh), int(warmup)
+        self.sea_power_exp = float(sea_power_exp)   # SEA prior |f|^-beta: SeaCache uses beta=2 for images, 3 for videos
         self.tau, self.r_obs, self.q_mult, self.adapt_q = tau, r_obs, q_mult, adapt_q
         self.num_steps_arg = None if num_steps is None else int(num_steps)
         self.scheduler = scheduler            # video scheduler; its `timesteps` give the number of model evaluations
@@ -166,9 +167,9 @@ def kalsea_forward(
         a, b = min(max(t_v, 1e-6), 1 - 1e-6), min(max(1.0 - t_v, 1e-6), 1 - 1e-6)
         if lay.grid is not None:
             x = mod.reshape(B, *lay.grid, mod.shape[-1])
-            f = apply_sea_from_ab(x, a, b, power_exp=2.0, dims=(-4, -3, -2), norm_mode="mean")
+            f = apply_sea_from_ab(x, a, b, power_exp=st.sea_power_exp, dims=(-4, -3, -2), norm_mode="mean")
         else:  # unexpected grid: 1-D filter along the token axis
-            f = apply_sea_from_ab(mod, a, b, power_exp=2.0, dims=(-2,), norm_mode="mean")
+            f = apply_sea_from_ab(mod, a, b, power_exp=st.sea_power_exp, dims=(-2,), norm_mode="mean")
         if j >= st.warmup and st.prev_mod is not None:
             st.acc += rel_l1(f, st.prev_mod)
             if st.acc < st.thresh:
@@ -228,7 +229,7 @@ def attach_state(transformer, scheduler, args):
     transformer.kalsea = KalSeaH3State(
         thresh=args.seacache_thresh, warmup=args.warmup_steps, tau=args.kalsea_tau, r_obs=args.kalsea_r_obs,
         q_mult=args.kalsea_q_mult, adapt_q=not args.kalsea_no_adapt_q, num_steps=args.num_inference_steps - 1,
-        scheduler=scheduler, enabled=not args.no_cache,
+        scheduler=scheduler, enabled=not args.no_cache, sea_power_exp=args.sea_power_exp,
     )
     return transformer.kalsea
 
@@ -301,6 +302,8 @@ def main():
     g.add_argument("--no_cache", action="store_true", help="plain MiniMax-H3, no gate / forecaster (reference run)")
     g.add_argument("--seacache_thresh", type=float, default=0.3,
                    help="SEA gate threshold delta. NOT calibrated for MiniMax-H3 -- check the printed NFE and tune it.")
+    g.add_argument("--sea_power_exp", type=float, default=3.0,
+                   help="exponent beta of the SEA filter's power-law prior; SeaCache uses 2 for images and 3 for videos")
     g.add_argument("--warmup_steps", type=int, default=3, help="first evaluations that are always computed")
     g.add_argument("--kalsea_tau", type=float, default=0.5, help="derivative damping time constant")
     g.add_argument("--kalsea_r_obs", type=float, default=1e-3, help="observation noise (relative units)")

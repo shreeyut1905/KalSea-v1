@@ -48,6 +48,7 @@ Arguments:
 
 KalSea knobs:
 - `--seacache_thresh` (`δ`, default 0.3): larger skips more
+- `--sea_power_exp 3.0`: exponent of the SEA filter's power-law prior (SeaCache: 2 for images, 3 for videos)
 - `--warmup_steps 3`: first evaluations that are always computed (the last evaluation is always computed too)
 - `--kalsea_tau 0.5`, `--kalsea_r_obs 1e-3`, `--kalsea_q_mult 1.0`, `--kalsea_no_adapt_q`
 
@@ -59,7 +60,8 @@ step down two different schedules (`shift` 12 and 3), and a schedule of `N` sigm
 
 - **Gate.** First block's AdaLN-modulated input of the video rows, laid out on their (frames, h, w) grid (recovered from the
   rotary coordinates and checked to be frame-major / row-major), filtered with the SEA Wiener filter for the current noise
-  level (`a = t`, `b = 1 - t`, H3's `t = 1 - sigma` convention), relative L1 change accumulated; the step is skipped while the sum
+  level (`a = t`, `b = 1 - t`, H3's `t = 1 - sigma` convention; frequency exponent `--sea_power_exp 3`, the value SeaCache uses for videos),
+  relative L1 change accumulated; the step is skipped while the sum
   stays below `δ`. If the grid cannot be recovered, a 1-D filter along the token axis is used.
 - **Residual.** `h_out - h_in` of the 50-block stack, for the video rows and for the audio rows only (the rows the heads read).
   Each stream has its own per-element Kalman forecaster (value + damped derivative, predicted every step, corrected on computed
