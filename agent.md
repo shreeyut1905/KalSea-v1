@@ -6,18 +6,24 @@ State described here: 2026-10-20. Facts below are things that were measured or c
 
 ---------------------------------------------------------------------------------------------------------------
 
-## 0. The task this file was written for
+## 0. The tasks this file was written for
 
-The owner asked for a **technical blog post about KalSea**, with these requirements (their words, paraphrased only for grammar):
+There are **two** separate tasks. Do not mix their constraints.
 
+**Task A: technical blog** (requirements in the owner's words, paraphrased only for grammar)
 1. Write a good technical blog for the method.
 2. **Push it to Hugging Face Spaces** so the owner can see it.
 3. Keep **a markdown file of the exact same blog in this repo**.
 4. The blog should be good; **animations, GIFs and videos** would be better.
 5. For the blog, **use models like MiniMax-H3 and FLUX.2 [dev]**.
+Spec and plan: section 6. Nothing of the blog exists yet.
 
-Nothing of the blog exists yet. Section 6 is the spec and the plan. Sections 1 to 5 are the facts you need to write it
-honestly. **Do not skip section 9 (credentials).**
+**Task B: research paper** (added later by the owner)
+The owner also plans to write a research paper and will use **only the models that appear in the SeaCache paper**
+(FLUX.1-dev, HunyuanVideo, Wan2.1 1.3B; details in section 11). Consequences: **MiniMax-H3 and FLUX.2 [dev] are blog-only and must not appear in
+the paper's tables**, and the paper needs KalSea on two video models that are **not ported yet**. Plan, protocol, gaps and risks: section 11.
+
+Sections 1 to 5 are the facts you need for both tasks. **Do not skip section 9 (credentials).**
 
 ---------------------------------------------------------------------------------------------------------------
 
@@ -170,6 +176,7 @@ Paired differences over the 200 prompts (95% bootstrap CI):
 | H3 patched forward | tested **only on a tiny random-weight `MiniMaxH3Transformer3DModel`** built from real diffusers classes, driven with the real layout builder, row-timestep plan and the two `MiniMaxH3Scheduler`s. With the gate never skipping, every output is **bitwise equal** to the original forward over a whole trajectory; skipping, state release/reuse, grid inference, 1-D gate fallback, `return_dict`, LoRA-scale kwarg and rejection of conditioned layouts all pass. Test file: `/home/ubuntu/KalSea-dev/h3_tiny_model_test.py` (outside the repo). |
 | H3 on the real checkpoint | **never run.** Speed, memory, quality, the right delta, `two_gpu` / `none` loading paths: unknown |
 | H3 delta / tau defaults | delta=0.3 is a guess; Kalman settings were transferred from FLUX |
+| H3 SEA exponent | fixed after reading the SeaCache paper: it uses beta=2 for images and **3 for videos** (ReSPect's Wan/Hunyuan scripts use 3.0); H3 now defaults to `--sea_power_exp 3.0` (it had been 2.0 in the first push) |
 | FLUX.2 [dev] | **not supported by the code** (see 6.5) |
 | Wan2.1 / HunyuanVideo / LTX | not in this repo (the owner removed them from scope) |
 
@@ -217,7 +224,7 @@ play `<video>` tags from repo files, so use **GIFs in the markdown and link the 
    (try 0.1 to 0.6 and read the printed evaluation count) because the default is a guess. This is a demo, not an evaluation: no metric claims from one or two videos.
 8. **Real-data illustrations are fine, cherry-picked ones are not.** A forecast-vs-truth plot of one element looked bad for KalSea on the one element tried; if you show such a plot choose the element by a stated rule (e.g. median error) or use a toy and label it.
 
-### 6.5 Models named by the owner
+### 6.5 Models named by the owner (for the BLOG only; the paper uses SeaCache's models, section 11)
 - **MiniMax-H3** (`MiniMaxAI/MiniMax-H3`, not gated, license "MiniMax-H3 Community License"): 33B single-stream transformer, two checkpoint partitions; the diffusers repo holds both.
   t2va needs `transformer/` (61.7 GB) + `text_encoder/` (Qwen3-VL-32B, 62.1 GB) + VAEs (about 10 GB) = about 135 GB download. 49 evaluations at the default 50 sigma points
   (a schedule of N points drives N-1 evaluations). Accessible with the machine token. Docs: https://huggingface.co/docs/diffusers/main/en/api/pipelines/minimax_h3.
@@ -268,7 +275,9 @@ say H3 / FLUX.2 results are single demos, not evaluations; state nondeterminism;
   - `/home/ubuntu/ReSpect`: clone of the owner's ReSPect repo with my **uncommitted, unpushed** additions in `FLUX/`: `speckcast_forecaster.py` (old name of `kalsea_forecaster.py`), `speckcast_record.py`, `speckcast_calibrate.py` (calibration), `benchmark.py` (8-GPU multi-config runner), `eval_metrics.py`, `quality_scores.py`, `cfg/*.json`, `prompts/` (drawbench200, coco_calib16, coco_tune64), `results/*.txt|png`, `runs/drawbench/` (6.2 GB), `calib_data/` (3.2 GB), and a modified `respect_generate.py`.
   - `/home/ubuntu/ReSpect/FLUX/runs/drawbench/<config>/`: 200 images per config + `stats_shard*.jsonl`; also `metrics_main.txt|json`, `metrics_sweep.txt|json`, `quality_main.txt|json`. **Directory names predate the rename:** `speckcast_0.37` = KalSea tau=0.5 (DCT); `speckcast_paper_0.37` = tau 0.1; `speckcast_nodct_0.37`; `respect_0.37` = ReSPect default; `respect_0.37_w0` = Chebyshev weight 0; `ref` = 50-step reference. File names `ReSPect_<idx>-<prompt>.png`, idx = DrawBench prompt index = seed.
   - `/home/ubuntu/Spectrum`: clone of the Spectrum repo with my earlier **velocity-space SpecKCast** implementation (`src/utils/speckcast.py`, uncommitted): there the forecaster alone was on par to slightly better than Spectrum, the adaptive scheduler worse. Background only.
-  - `/home/ubuntu/KalSea-dev/`: `h3_tiny_model_test.py` (the H3 verification), `SpecKCast_paper_2610.26837.txt` (text of the paper). `/tmp/*` is ephemeral.
+  - `/home/ubuntu/KalSea-dev/`: `h3_tiny_model_test.py` (the H3 verification), `SpecKCast_paper_2610.26837.txt`, `SeaCache_paper_2602.18993.pdf|txt` (the paper, text-extracted),
+    `SeaCache_official_FLUX_seacache_generate.py` (official SeaCache FLUX script, for gate comparison). `/tmp/*` is ephemeral.
+  - `/home/ubuntu/ReSpect/{Wan2.1,HunyuanVideo}/respect_generate.py`: the owner's ReSPect video scripts (they drop into the official Wan2.1 / HunyuanVideo repos); starting point for the video ports of section 11.6.
 - To run the evaluation scripts again, copy them from `/home/ubuntu/ReSpect/FLUX/` (they import the old `speckcast_*` names).
 
 ---------------------------------------------------------------------------------------------------------------
@@ -283,7 +292,10 @@ say H3 / FLUX.2 results are single demos, not evaluations; state nondeterminism;
 6. GitHub's contributors graph is cached and can show a stale author for hours after a history rewrite; the contributors API is the truth.
 7. Latency numbers depend on 8 concurrent processes; compare only configs run in the same session (the benchmark interleaves configs per prompt).
 8. The `nocalib` FLUX variant in `results/tune_coco64.txt` (q=1, p22=2) is not a clean calibration-free ablation; it only shows that a *small* noise default is bad.
-9. Never trust a claim just because it is in a README: section 5 is the source of truth for what was verified.
+9. SEA exponent: beta=2 for images (FLUX), **beta=3 for videos** (SeaCache paper, ReSPect video scripts, H3 now). Use the right one when porting.
+10. **Do not match budgets across setups by delta.** The official SeaCache FLUX gate is line-for-line the same logic as ReSPect's FLUX gate (compared in `SeaCache_official_FLUX_seacache_generate.py`), yet the paper's SeaCache at delta=0.3 used 37% of the original TFLOPs
+    (1098 of 2976) while here delta=0.3 gives 20.8 evaluations (42%) and 18.1 evaluations needs delta=0.37. Possible causes (not isolated): diffusers version, dtype, hardware, how TFLOPs were counted. Always match by **measured evaluations / TFLOPs**.
+11. Never trust a claim just because it is in a README: section 5 is the source of truth for what was verified.
 
 ---------------------------------------------------------------------------------------------------------------
 
@@ -298,9 +310,115 @@ say H3 / FLUX.2 results are single demos, not evaluations; state nondeterminism;
 
 ## 10. Open TODOs (rough priority)
 
-1. Write the blog (section 6) and publish the Space + markdown copy.
+1. Task A: write the blog (section 6) and publish the Space + markdown copy. Task B: the research paper (section 11); its first steps are the missing baselines of 11.4, which also make the blog's claims safer.
 2. First real run of the H3 code; fix what breaks; choose delta; produce the H3 demo videos.
 3. Decide on FLUX.2 [dev]: port (6.5) or leave out.
 4. Closed-loop comparison against a plain damped two-point linear extrapolator, and an image-quality run of the calibration-free no-DCT setting (these decide how much of KalSea's "Kalman" is needed).
 5. Add a `LICENSE` file (none yet) before making the repo public; note the MiniMax-H3 community license for H3 users.
 6. Optionally move the evaluation/calibration scripts into the repo (the owner asked for inference code only, so they were left out).
+
+---------------------------------------------------------------------------------------------------------------
+
+## 11. Research paper (Task B)
+
+### 11.1 The owner's constraint
+The owner plans a research paper and will use **only the models that appear in the SeaCache paper**: *SeaCache: Spectral-Evolution-Aware Cache for Accelerating Diffusion Models*,
+Chung et al., CVPR 2026 (Oral), arXiv 2602.18993, code https://github.com/jiwoogit/SeaCache (local copy of the paper text: `/home/ubuntu/KalSea-dev/SeaCache_paper_2602.18993.txt`).
+So **MiniMax-H3 and FLUX.2 [dev] are blog-only**; do not spend paper time on them and do not put them in paper tables.
+
+| model | task | SeaCache main-table setting | hardware in SeaCache | status here |
+|---|---|---|---|---|
+| FLUX.1-dev | text-to-image | 1024x1024, 50 steps, 200 DrawBench prompts | NVIDIA Blackwell Pro 6000 | KalSea implemented and measured (budgets/baselines not yet matched to the protocol) |
+| HunyuanVideo | text-to-video | 480p, 65 frames, 50 steps, 944 VBench prompts | A100 | **not ported** |
+| Wan2.1 1.3B (official pretrained 1.3B checkpoint; CFG, two passes per step) | text-to-video | 480p, 65 frames, 50 steps, 944 VBench prompts | A100 | **not ported** |
+
+SeaCache appendix-only settings (optional for us): Wan2.1-14B-T2V through LightX2V (overhead profiling only; also a 16-step distilled sampler), Jenga efficient attention on Wan2.1,
+a MagCache comparison (FLUX on DrawBench-200; Wan2.1 1.3B at 480p, 41 frames, 50 random VBench prompts), and a DiCache plug-in experiment on FLUX.
+
+### 11.2 The SeaCache evaluation protocol to replicate (so our numbers are comparable)
+- **Reference** = the full 50-step output of the same model with the **same initial seed**, shared by all methods. Outputs stored as PNG / MP4.
+- **Budgets:** two, "approximately 50% and 30% refresh ratio" (their wording). Their own TFLOPs ratios are not exactly those (SeaCache delta 0.3 on FLUX = 1098 of 2976 TFLOPs = 37%), so **define budgets explicitly by measured evaluations and/or TFLOPs** and report both.
+- **Metrics:** PSNR (RGB), LPIPS, SSIM against the reference, averaged over samples; latency; **TFLOPs measured with Calflops**; image preference by **CycleReward** (reported as average rank among methods, Table 2); videos additionally **VBench on all dimensions** (reported per dimension and as average rank, Tables 7 to 10) and **CompressedVQA** full-reference scores (Table 11).
+- **Baselines:** vanilla fewer steps (25 and 15); **TeaCache** (official code, default settings, threshold delta tuned for the budget); **TaylorSeer** (official code, default settings, expansion order 1 for FLUX and 2 for the video models, stride S tuned for the budget; to be fair the first 5 timesteps (images) / 3 (videos) are explicitly refreshed); Delta-DiT and ToCa (images only); DiCache (plug-in); MagCache (appendix).
+- **Ablation subsets:** 200 prompts for FLUX and 20 random VBench prompts for HunyuanVideo (their Fig. 8); plots are PSNR versus refresh ratio.
+- **Overhead:** SEA filtering cost 0.058 s of 9.4 s on FLUX (0.6%) and 0.362 s of 90.8 s on HunyuanVideo (0.4%). We should report the same for the Kalman forecaster.
+- SEA exponent beta = 2 (images) / 3 (videos); the official gate uses `apply_sea_with_scheduler` as in `util_seacache.py`.
+
+Numbers reported in the SeaCache paper (their hardware and seeds; use only to sanity-check a reproduction, never to compare against ours directly):
+
+| model | method | latency s | TFLOPs | PSNR | LPIPS | SSIM |
+|---|---|---|---|---|---|---|
+| FLUX.1-dev | original 50 steps | 20.9 | 2976 | | | |
+| | TeaCache d=0.3 / TaylorSeer S=3 / **SeaCache d=0.3** | 11.4 / 9.8 / 9.4 | 1547 / 1191 / 1098 | 20.76 / 22.78 / **26.29** | 0.211 / 0.163 / 0.106 | 0.810 / 0.828 / 0.893 |
+| | TeaCache d=0.6 / TaylorSeer S=5 / **SeaCache d=0.6** | 7.1 / 7.5 / 6.4 | 892 / 834 / 773 | 17.21 / 19.97 / **21.33** | 0.348 / 0.236 / 0.226 | 0.714 / 0.762 / 0.798 |
+| HunyuanVideo | original | 182.6 | 14038 | | | |
+| | TeaCache d=0.12 / TaylorSeer S=2 / **SeaCache d=0.19** | 98.5 / 96.9 / 90.8 | 6994 / 7299 / 6747 | 23.40 / 24.14 / **32.39** | 0.133 / 0.152 / 0.047 | 0.805 / 0.820 / 0.932 |
+| | TeaCache d=0.2 / TaylorSeer S=3 / **SeaCache d=0.35** | 64.4 / 68.8 / 58.1 | 4794 / 5053 / 4598 | 20.42 / 20.42 / **26.46** | 0.172 / 0.242 / 0.133 | 0.734 / 0.733 / 0.857 |
+| Wan2.1 1.3B | original | 176.3 | 8214 | | | |
+| | TeaCache d=0.09 / TaylorSeer S=2 / **SeaCache d=0.2** | 86.6 / 93.1 / 83.9 | 4107 / 4189 / 3942 | 20.84 / 16.15 / **26.60** | 0.171 / 0.336 / 0.075 | 0.721 / 0.543 / 0.873 |
+| | TeaCache d=0.15 / TaylorSeer S=3 / **SeaCache d=0.35** | 63.6 / 67.1 / 56.6 | 2957 / 2956 / 2793 | 18.88 / 14.18 / **21.78** | 0.245 / 0.455 / 0.170 | 0.645 / 0.453 / 0.740 |
+
+**Read this row carefully:** on Wan2.1 1.3B, TaylorSeer (a *forecaster*, order 2) is far **worse** than the reuse-based methods (PSNR 16.15 vs 20.84 for TeaCache vs 26.60 for SeaCache).
+TaylorSeer also uses its own fixed-stride schedule, so this is not a pure forecaster effect, but it is a warning that forecasting does not automatically help on video.
+
+### 11.3 What the SeaCache baseline is in our code (important and cheap)
+- The official SeaCache FLUX gate (`FLUX/seacache_generate.py` in their repo) is **the same logic as ReSPect's FLUX gate and as `FLUX/kalsea_generate.py`** (compared line by line): first and last step forced, SEA filter with beta=2, accumulate rel-L1, skip below delta.
+- Its skip path is **plain residual reuse** (`hidden_states + previous_residual`). In our code that is exactly the fallback taken when there is no forecaster. A "SeaCache" row is therefore obtained by running our pipeline **with the forecaster switched off**
+  (add e.g. `--forecaster reuse` that makes `make_forecaster` return `None`; the forward already falls back to `previous_residual`). It is not implemented yet. Use the official script as a cross-check on a few prompts.
+- The delta -> evaluations mapping differs from the paper's (pitfall 10 in section 8): match budgets by measurement.
+
+### 11.4 What the paper can and cannot claim today (honest status)
+Evidence that exists (FLUX only, DrawBench-200, section 4): at the same SEA gate KalSea's forecaster beats ReSPect's default Spectrum forecaster in PSNR/LPIPS at all 7 thresholds and uses about 3x less forecaster memory; most of that is the Chebyshev term hurting (w=0 control); the DCT/band-warp machinery is unnecessary in residual space.
+
+Evidence that does **not** exist yet, i.e. what a reviewer will ask for first:
+1. **KalSea vs SeaCache itself (plain reuse) at the identical gate.** Never run. This is the headline comparison for a paper built on SeaCache. A hint that it may be close: the SeaCache paper's FLUX number at a comparable budget (26.29 dB) is about the same as ReSPect's default forecaster here (26.18 dB at 18.1 evaluations), though the setups differ (hardware, seeds).
+2. **KalSea vs a plain damped two-point linear extrapolator and vs Taylor order 1 and 2 at the same gate** (closed loop, image space). The one open-loop check favoured damped linear extrapolation in raw residual error. Without this the Kalman filter's necessity is unproven.
+3. **TeaCache, TaylorSeer (official), Delta-DiT, ToCa, DiCache, vanilla 25/15 steps** under the protocol of 11.2 (images and videos as in the SeaCache tables).
+4. **Both video models** (HunyuanVideo, Wan2.1 1.3B) with VBench, and the CFG handling for Wan2.1. Nothing exists. Forecasting may not beat reuse on video (11.2).
+5. **CycleReward**, **TFLOPs (Calflops)**, matched budgets (about 50% / 30%), overhead of the forecaster as % of latency.
+6. Closed-loop quality of the **calibration-free** setting (the one planned for video), and calibration prompts disjoint from test prompts.
+7. Noise floor: runs are not bit-reproducible (about 40 dB between identical runs on one image); estimate the noise on a subset (repeat runs) before claiming sub-0.1 dB differences; keep paired bootstrap CIs.
+8. Novelty relative to **SpecKCast** (Kalman + DCT bands + warp, velocity space, own scheduler) and **ReSPect** (SEA gate + residual forecasting): say exactly what is new. As things stand it is "the forecaster of ReSPect replaced by a Kalman filter, plus the finding that DCT/warp are not needed in residual space".
+
+Framing options to discuss with the owner (do not decide silently):
+- **A. Method paper.** Needs wins over SeaCache and TaylorSeer at matched budgets on all three models. Safe on none of the video models today.
+- **B. Analysis paper** ("what matters when forecasting inside a cache gate": reuse vs Taylor vs Chebyshev vs Kalman, with the negative findings). Needs the forecaster ablation of item 2 on all three models; claims are modest but robust, and the existing evidence already supports its core.
+
+### 11.5 Experiment plan (ordered)
+- **E0 sanity:** reproduce SeaCache's FLUX rows (SeaCache d=0.3/0.6, TeaCache, TaylorSeer) with the official code on DrawBench-200; metrics should land near the table above (different hardware; not identical).
+- **E1 forecaster ablation at a fixed SEA gate (FLUX, 200 prompts, two matched budgets):** reuse (= SeaCache), Taylor-1, Taylor-2, damped two-point linear, Chebyshev only, Spectrum (w=0.5; ReSPect), KalSea per-element, KalSea DCT/warp. Metrics: PSNR, LPIPS, SSIM, CycleReward rank, evaluations, TFLOPs, latency, memory; paired CIs.
+- **E2 video:** the same ablation on Wan2.1 1.3B and HunyuanVideo (480p, 65 frames), the VBench prompts (944 as in SeaCache; 20 random for sweeps, as they do), VBench all dimensions + average rank, CompressedVQA.
+- **E3 KalSea ablations:** tau, DCT vs per-element, band warp, online q adaptation, r_obs, calibrated vs calibration-free, warm-up steps.
+- **E4 overhead:** Kalman + SEA cost as % of latency; memory table.
+- **E5 optional:** LightX2V / Jenga compatibility, MagCache and DiCache comparisons.
+- Figures to produce (mirroring SeaCache): PSNR vs refresh-ratio curves (FLUX, HunyuanVideo), per-step refresh-pattern heat map over prompts (their Fig. 10), qualitative grids at both budgets, forecaster error per step.
+
+### 11.6 Engineering needed for the two video models
+- Start from the owner's scripts: `/home/ubuntu/ReSpect/Wan2.1/respect_generate.py` (1070 lines) and `/home/ubuntu/ReSpect/HunyuanVideo/respect_generate.py`; both drop into the official repos
+  (https://github.com/Wan-Video/Wan2.1, https://github.com/Tencent/HunyuanVideo) and implement the SEA gate with beta=3 over (T,H,W) plus `SpectrumResidualForecaster`. Replace the forecaster by `KalSeaForecaster(use_dct=False, time_mode="step", ...)` (token sets without a fixed 2D grid need no grid in that mode; the DCT mode is 2D-image only).
+- **Wan2.1 runs two passes per step (conditional / unconditional).** ReSPect keeps separate gate state **and separate forecasters** for even (cond) and odd (uncond) calls (`spectrum_forecaster_even/odd`, `previous_residual_even/odd`, `step_t = cnt // 2`). Do the same with two `KalSeaForecaster`s. Warm-up there: `ret_steps = 1*2` and `cutoff_steps = steps*2 - 2`, or `5*2` / `steps*2` with `--use_ret_steps`.
+- **HunyuanVideo** is guidance-distilled (one pass); its residuals are large (ReSPect needed `fit_chunks=8` for Spectrum). KalSea state is two fp32 copies of the residual (estimate for 480p x 65 frames: about 26,520 tokens x 3072 channels, roughly 0.65 GB; not measured).
+- For each port: first a bitwise-equality check against the original forward with the gate never skipping (as `/home/ubuntu/KalSea-dev/h3_tiny_model_test.py` does for H3), then a short real run, then measure evaluations vs delta (start from SeaCache's deltas: Hunyuan 0.19 / 0.35, Wan 1.3B 0.2 / 0.35) and match budgets by measurement.
+- Weights are **not downloaded** (the HF cache only has metadata for `Wan-AI/Wan2.1-T2V-14B` and `tencent/HunyuanVideo`; the paper uses the **1.3B** Wan checkpoint). About 394 GB of disk is free.
+
+### 11.7 Compute estimate (rough; assumptions stated)
+SeaCache's reference latencies on an A100: 182.6 s (HunyuanVideo) and 176.3 s (Wan2.1 1.3B) per video. Assuming (unmeasured) about 3x faster on a B200, a reference video costs about 60 s; 944 prompts is about 16 GPU-hours, i.e. about 2 h wall on 8 GPUs, and each cached configuration costs roughly 35 to 50% of that.
+A main table with reference + about 8 cached configurations is therefore of the order of 10 h wall per video model; ablations on 20 to 50 prompts are cheap. **Measure one reference video before committing to these numbers.** Images: the 200-prompt FLUX runs take minutes (one 26-config sweep took about 25 minutes on 8 GPUs).
+
+### 11.8 Tools to set up
+Calflops (TFLOPs), VBench (code + its models + the prompt files; SeaCache used 944 prompts, VBench's `all_dimension.txt` has 946, so ask the owner or the SeaCache authors which 944, or state the exact list used), CycleReward, CompressedVQA (optional), LPIPS and scikit-image (already in the `rv` venv).
+The image evaluation scripts exist in `/home/ubuntu/ReSpect/FLUX/` (`benchmark.py`, `eval_metrics.py`, `quality_scores.py`); there is nothing for video yet.
+
+### 11.9 Reporting rules
+Shared seeds and a shared reference for all methods; paired bootstrap CIs; matched budgets reported in evaluations and TFLOPs; every baseline run under the same conditions as ours (not copied from papers); show the failures and the worst cases; state the nondeterminism;
+describe the AI assistance according to the target venue's policy; credit SeaCache, ReSPect, Spectrum, SpecKCast and every baseline; release code that actually reproduces the tables (the KalSea repo currently has inference code only, so decide with the owner where the evaluation code goes).
+
+### 11.10 References (verify every entry before citing; IDs below come from the SeaCache and SpecKCast reference lists or from memory where marked)
+- SeaCache: Chung et al., CVPR 2026 (Oral), arXiv 2602.18993.  Spectrum: Han et al., CVPR 2026, arXiv 2603.01623.  SpecKCast: Rajabi et al., arXiv 2610.26837.
+- TaylorSeer: Liu et al., arXiv 2503.06923 (ICCV 2025).  TeaCache: Liu et al., CVPR 2025 ("Timestep embedding tells: it's time to cache for video diffusion model").  ToCa: Zou et al., ICLR 2025, arXiv 2410.05317.
+  Delta-DiT: arXiv 2406.01125.  FORA: arXiv 2407.01425.  MagCache: Ma et al., NeurIPS 2025.  DiCache, HiCache (ICLR 2026): look up.
+- VBench (CVPR 2024), DrawBench (Saharia et al., 2022), CycleReward, Calflops, LPIPS, SSIM; HunyuanVideo (arXiv 2412.03603, from memory), Wan2.1 (arXiv 2503.20314, from memory), FLUX.
+
+### 11.11 Questions to put to the owner before starting
+Target venue, format and deadline; whether the paper is a follow-up to or a replacement for ReSPect (the ReSPect README has no authors and a placeholder year; is it published?); method paper (A) or analysis paper (B); which two budgets exactly; where the evaluation code should live and whether it is released;
+the venue's AI-assistance disclosure policy; authorship; GPU budget for the video experiments.
