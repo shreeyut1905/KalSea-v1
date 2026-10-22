@@ -4,10 +4,11 @@ KalSea inference for [MiniMax-H3](https://huggingface.co/MiniMaxAI/MiniMax-H3), 
 diffusers: a SeaCache-style spectrally aligned gate (**when** to skip a transformer evaluation) plus Kalman residual
 forecasters (**what** to write on skipped steps).
 
-> **Status: inference code only, text-to-video only.** No evaluation was run, and the code has **not** been run on the real
-> 33B checkpoint (62 GB transformer + 62 GB Qwen3-VL conditioner). What was verified is listed under
-> [Verification](#verification). The gate threshold `δ` and the forecaster settings are not calibrated for H3; see
-> [Tuning](#tuning).
+> **Status: text-to-video only; one real-checkpoint demo, no evaluation.** The code has been run on the real 33B checkpoint
+> (62 GB transformer + 62 GB Qwen3-VL conditioner) once: a demo of 3 prompts with one seed each (see
+> [Real-checkpoint demo](#real-checkpoint-demo)). That first run found one bug, in model loading only, which is fixed. What was
+> verified is listed under [Verification](#verification). The gate threshold `δ` and the forecaster settings are not calibrated
+> for H3; see [Tuning](#tuning).
 
 Supported workflow: `t2va` (text -> video + audio). The keyframe (`fl2va`) and reference (`ref2va`) workflows are not
 supported; a conditioned layout raises a clear error.
@@ -21,6 +22,12 @@ pip install --upgrade "diffusers>=0.41" transformers accelerate safetensors prot
 `av` (PyAV) is used by diffusers' `encode_video` to write the mp4 with the soundtrack. The MiniMax-H3 weights are fetched from
 the Hub on first use (`MiniMaxAI/MiniMax-H3`, `transformer/` + shared components, about 135 GB). The weights are under the
 [MiniMax-H3 Community License](https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE).
+
+`t2va` needs only `transformer`, `text_encoder`, `processor`, `tokenizer`, `vae`, `audio_vae`, `scheduler` and `audio_scheduler`; the
+`transformer_ref/`, `FL2VA/` and `Ref2VA/` folders are not used. **Running offline** (`HF_HUB_OFFLINE=1`): every component is loaded from
+the cached snapshot directory, so a partial download of only those components works. This was the bug fixed after the first real run:
+before, diffusers still contacted the Hub for the sharded checkpoint, `transformer`, `vae` and `processor` failed to load with only a
+warning, and the script crashed later. A component that fails to load now raises a clear error.
 
 ## Usage
 
@@ -44,6 +51,10 @@ Arguments:
   as needed (one GPU, recipe of the diffusers docs); `none` keeps everything on one large GPU (the two big components need about 124 GB
   in bf16); `two_gpu` puts the text encoder on `cuda:1` and the rest on `cuda:0`. `--memory_reserve_margin` (default `12GB`)
   and `--attention_backend` (e.g. `_flash_3_hub` on Hopper) are passed through.
+  On the real checkpoint (B200, 960x544, 124 frames) all three modes worked: `none` was used for the demo (peak allocated about 134.7 GiB
+  with KalSea, up to 143,148 MiB in `nvidia-smi`); `auto` ran once and gave bitwise-identical output; `two_gpu` ran once (same computed steps,
+  identical audio; 72,422 / 65,448 MiB in `nvidia-smi` on the two GPUs). With `auto` / `two_gpu` the first call includes moving the weights
+  to the GPU; their steady-state speed was not measured.
 - `--no_cache`: plain MiniMax-H3 (the original forward runs unchanged)
 
 KalSea knobs:
@@ -73,14 +84,22 @@ step down two different schedules (`shift` 12 and 3), and a schedule of `N` sigm
 - **Memory.** The state is two fp32 copies of the residual plus the previous gate input. At the default 1344x768 / 124 frames there
   are 37,296 video rows of width 5376, i.e. about 2 x 0.8 GB (fp32) + 0.4 GB (bf16) resident and a few GB of transient
   buffers during the FFT filter and the update (estimated from the shapes, not measured). It is freed before the VAE decode.
+  Measured at 960x544 / 124 frames: peak allocated 134.4 to 134.7 GiB with KalSea vs 133.1 to 133.3 GiB for plain H3.
 
 ## Tuning
 - **`δ` is not calibrated for H3.** On FLUX.1-dev `δ=0.37` gives 18 of 50 evaluations and `δ=0.6` gives 13, but H3 has a different
   noise schedule (video `shift=12`), so those numbers do not transfer. Start with the default, look at the printed
   `evaluations N/49 computed at steps [...]`, then raise `δ` for more speed or lower it for more fidelity.
+  Measured on the real checkpoint at 960x544 / 124 frames (one prompt): `δ` = 0.1 / 0.2 / 0.3 / 0.45 / 0.6 gave 46 / 30 / 23 / 17 / 14 of 49
+  evaluations; at 0.3 and 0.6 all three demo prompts computed the same steps. Other canvases and frame counts were not tried.
 - The Kalman settings (`tau=0.5`, `r_obs=1e-3`, large process noise so that the trend is re-estimated at every update) come from
   the FLUX study (`../FLUX`), where the same per-element filter was evaluated; on recorded FLUX residuals the built-in
   calibration-free noise values behave like the calibrated filter. None of this was tuned on H3.
+
+## Real-checkpoint demo
+The script was run once on the real checkpoint (2026-10-20): 3 prompts with sound, one seed each, 960x544, 124 frames
+(5.2 s), 50 sigma points (49 evaluations), default KalSea settings, `--offload none`, one B200 per run. Plain H3 was
+deterministic (repeated reference runs were bitwise identical). This was a functional check, not an evaluation.
 
 ## Verification
 Done (without the real checkpoint), using a tiny random-weight `MiniMaxH3Transformer3DModel` built from the real diffusers
@@ -93,5 +112,10 @@ classes and driven with the pipeline's own layout builder, row-timestep plan and
 - a keyframe-conditioned layout is rejected with a clear error;
 - the diffusers APIs used by the loader exist with the signatures used, and `encode_video` writes video + stereo audio.
 
-Not done: a run on the real checkpoint (speed, memory, output quality, the choice of `δ`), any quality or speed evaluation, and
-the `two_gpu` / `none` loading paths (they follow the diffusers MiniMax-H3 documentation).
+The tiny-model test was re-run after the loading fix and still passes (it does not exercise loading).
+
+Done on the real checkpoint: the [demo](#real-checkpoint-demo) above, with `--offload none`, plus one run each with `auto` and
+`two_gpu` (see `--offload`).
+
+Not done: any quality or speed evaluation, steady-state latency with `auto` / `two_gpu`, other canvases
+and frame counts, and tuning `δ` or the Kalman settings for H3.

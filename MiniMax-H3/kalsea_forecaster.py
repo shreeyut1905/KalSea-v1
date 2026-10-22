@@ -1,8 +1,8 @@
-"""KalSea residual forecaster (drop-in replacement for `SpectrumResidualForecaster`).
+"""KalSea residual forecaster.
 
 The forecaster is adapted from SpecKCast (Rajabi et al., arXiv:2610.26837), which forecasts the final velocity with
 per-DCT-coefficient Kalman filters.  Here it forecasts the *transformer residual* (block-stack output minus block-stack
-input, shape [B, N_tokens, D]) that ReSPect writes on skipped steps; *when* to skip is still decided by the SeaCache/SEA
+input, shape [B, N_tokens, D]) that is written on skipped steps; *when* to skip is still decided by the SeaCache/SEA
 gate.
 
 Every element of the residual is tracked by a Kalman filter with state (value m, temporal derivative nu):
@@ -121,7 +121,7 @@ class KalSeaCalib:
 # Forecaster
 # ----------------------------------------------------------------------------------------------
 class KalSeaForecaster:
-    """Same interface as `SpectrumResidualForecaster`: update(step, residual), predict(step), n_obs.
+    """Interface: update(step, residual), predict(step), n_obs.
 
     `update` is called on computed steps (observation), `predict` on skipped steps; the filter is advanced through every
     intermediate step automatically, so any mixture of computed / skipped steps is fine.

@@ -12,7 +12,7 @@ KalSea = SeaCache's spectrally aligned skip gate (*when* to skip a transformer e
                 calibration needed).
   * skipped step : the 50 blocks are bypassed; input embeddings + forecast residual go through the output norm / heads.
 
-The patch is installed on the *class* `forward` (like ReSPect does for FLUX) so accelerate / ComponentsManager offload
+The patch is installed on the *class* `forward` (as the FLUX script does) so accelerate / ComponentsManager offload
 hooks, which wrap the instance's forward, keep working.  Without a KalSea state attached (or with `--no_cache`) the
 original diffusers forward runs unchanged.
 
@@ -237,31 +237,61 @@ def attach_state(transformer, scheduler, args):
 # ----------------------------------------------------------------------------------------------
 # pipeline loading (the recipes of the diffusers MiniMax-H3 documentation)
 # ----------------------------------------------------------------------------------------------
+def _component_source(repo):
+    """Where the components are loaded from.  Fix from the first real-checkpoint run: with HF_HUB_OFFLINE=1, diffusers'
+    sharded-checkpoint loader still calls the Hub API (`model_info`, skipped only with `local_files_only=True`) and the
+    Qwen3-VL processor probes a `processor/config.json` that the repo does not have, so `transformer`, `vae` and
+    `processor` failed to load.  Pointing every component at the cached snapshot *directory* avoids all Hub lookups
+    (all components live in this one repo).  Online, the repo id is used unchanged."""
+    from huggingface_hub import constants, try_to_load_from_cache
+    if os.path.isdir(repo):
+        return repo
+    if constants.HF_HUB_OFFLINE:
+        f = try_to_load_from_cache(repo, "modular_model_index.json")
+        if isinstance(f, str):
+            return os.path.dirname(f)
+    return None
+
+
+def _require_loaded(pl, blocks):
+    """diffusers only logs a warning when a component fails to load (then e.g. `pipe.transformer` is None)."""
+    need = sorted(s.name for s in blocks.expected_components if s.default_creation_method == "from_pretrained")
+    missing = [n for n in need if getattr(pl, n, None) is None]
+    if missing:
+        raise RuntimeError(f"MiniMax-H3 components failed to load: {missing} (see the diffusers messages above)")
+
+
 def load_pipeline(args):
     from diffusers import ComponentsManager, ModularPipeline
 
     repo = args.model_id
     dtype = torch.bfloat16
+    src = _component_source(repo)
+    load_kw = dict(dtype=dtype) if src is None else dict(dtype=dtype, pretrained_model_name_or_path=src)
     if args.offload == "two_gpu":
         # text encoder (62 GB) on cuda:1, everything else on cuda:0 -- nothing is evicted to host memory
         workflow = ModularPipeline.from_pretrained(repo).blocks.get_workflow("t2va")
         text_manager = ComponentsManager()
         text_manager.enable_auto_cpu_offload(device="cuda:1")
         conditioner = workflow.sub_blocks.pop("text_encoder").init_pipeline(repo, components_manager=text_manager)
-        conditioner.load_components(dtype=dtype)
+        conditioner.load_components(**load_kw)
+        _require_loaded(conditioner, conditioner.blocks)
         manager = ComponentsManager()
         manager.enable_auto_cpu_offload(device="cuda:0")
         rest = workflow.init_pipeline(repo, components_manager=manager)
-        rest.load_components(dtype=dtype)
+        rest.load_components(**load_kw)
+        _require_loaded(rest, rest.blocks)
         return conditioner, rest
     if args.offload == "auto":
         manager = ComponentsManager()
         pipe = ModularPipeline.from_pretrained(repo, components_manager=manager)
-        pipe.load_components(workflow="t2va", dtype=dtype)
+        pipe.load_components(workflow="t2va", **load_kw)
+        _require_loaded(pipe, pipe.blocks.get_workflow("t2va"))
         manager.enable_auto_cpu_offload(device="cuda", memory_reserve_margin=args.memory_reserve_margin)
     else:  # "none": all components resident on one large GPU (transformer 62 GB + text encoder 62 GB in bf16)
         pipe = ModularPipeline.from_pretrained(repo)
-        pipe.load_components(workflow="t2va", dtype=dtype)
+        pipe.load_components(workflow="t2va", **load_kw)
+        _require_loaded(pipe, pipe.blocks.get_workflow("t2va"))
         pipe.to("cuda")
     return None, pipe
 
